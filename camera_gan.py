@@ -1,3 +1,6 @@
+# don't forget to open the tensorflow conda virtual environment first!
+# source tensorflow
+
 import sys
 print(sys.version)
 import numpy as np
@@ -17,7 +20,8 @@ run_config.gpu_options.allow_growth=True
 
 config = type("Foo", (object,), {})()
 config.dataset = 'celebA'
-config.batch_size = 64
+config.batch_size = 1
+seconds_per_random_sample = 4
 
 #with tf.Session(config=run_config) as sess:
 sess = tf.Session(config=run_config) 
@@ -51,14 +55,31 @@ def get_mask(file):
 def deprocess_image(img):
     return np.clip(255 * (img+0.5), 0.0, 255.0).astype(np.uint8)
 
+def process_webcam_image(img, x_scale, y_scale, flip=True, threshold=0.5):
+  res = cv2.resize(img, None, fx=x_scale, fy=y_scale, interpolation=cv2.INTER_AREA) 
+  res_min = np.min(res)
+  res_max = np.max(res)
+  scaled = (res - res_min)/float(res_max - res_min)
+  flipped = cv2.flip(scaled, 1) if flip else scaled
+  flipped[flipped>threshold] = 1
+  flipped[flipped<=threshold] = 0
+  return flipped
+
 z_sample = np.random.uniform(-0.5, 0.5, size=(config.batch_size, dcgan.z_dim))
 
-z_mask = np.ones([dcgan.z_dim])
-h0_mask = np.ones([int(dcgan.output_height/16), int(dcgan.output_width/16)]) # 4, 4
-h1_mask = np.ones([int(dcgan.output_height/8), int(dcgan.output_width/8)]) # 8, 8
-h2_mask = np.ones([int(dcgan.output_height/4), int(dcgan.output_width/4)]) # 16, 16
-h3_mask = np.ones([int(dcgan.output_height/2), int(dcgan.output_width/2)]) # 32, 32
-h4_mask = np.ones([int(dcgan.output_height), int(dcgan.output_width)]) # 64, 64
+z_mask_empty = np.ones([dcgan.z_dim])
+h0_mask_empty = np.ones([int(dcgan.output_height/16), int(dcgan.output_width/16)]) # 4, 4
+h1_mask_empty = np.ones([int(dcgan.output_height/8), int(dcgan.output_width/8)]) # 8, 8
+h2_mask_empty = np.ones([int(dcgan.output_height/4), int(dcgan.output_width/4)]) # 16, 16
+h3_mask_empty = np.ones([int(dcgan.output_height/2), int(dcgan.output_width/2)]) # 32, 32
+h4_mask_empty = np.ones([int(dcgan.output_height), int(dcgan.output_width)]) # 64, 64
+
+z_mask = z_mask_empty
+h0_mask = h0_mask_empty
+h1_mask = h1_mask_empty
+h2_mask = h2_mask_empty
+h3_mask = h3_mask_empty
+h4_mask = h4_mask_empty
 
 # vc.release()
 vc = cv2.VideoCapture(1)
@@ -69,26 +90,57 @@ if vc.isOpened(): # try to get the first frame
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)    # makes the blues image look real colored
         webcam_preview = plt.imshow(frame)    
 else:
-    is_capturing = False
-    
+    is_capturing = False    
+
 print(is_capturing)
+time_to_switch = time.time() + seconds_per_random_sample
 while is_capturing:
     try:    # Lookout for a keyboardInterrupt to stop the script
         is_capturing, frame = vc.read()
         if frame is not None:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)    # makes the blues image look real colored
-            #print(frame.shape) # (480, 640) * (1/15, 1/20) = (32, 32)
-            #res = cv2.resize(frame, None, fx=1/20, fy=1/15, interpolation=cv2.INTER_AREA) # 32, 32
-            #res = cv2.resize(frame, None, fx=1/40, fy=1/30, interpolation=cv2.INTER_AREA) # 16, 16
-            res = cv2.resize(frame, None, fx=1/80, fy=1/60, interpolation=cv2.INTER_AREA) # 8, 8
-            #print(res.shape)
-            res_min = np.min(res)
-            res_max = np.max(res)
-            scaled = (res - res_min)/float(res_max - res_min)
-            flipped = cv2.flip(scaled, 1)
-            flipped[flipped>.5] = 1
-            flipped[flipped<=.5] = 0
-            h1_mask = flipped
+            #print(frame.shape) # (640, 480) 
+            # resize key:
+            #   32, 32 -> fx=1/20, fy=1/15
+            #   16, 16 -> fx=1/40, fy=1/30
+            #   8, 8   -> fx=1/80, fy=1/60
+            #   4, 4   -> fx=1/160, fy=1/48
+            #   10, 10 -> fx=1/64, fy=1/48
+            if(time.time() > time_to_switch):
+              time_to_switch += seconds_per_random_sample
+              z_sample = np.random.uniform(-0.5, 0.5, size=(config.batch_size, dcgan.z_dim))
+
+            mask_choice = 'z012'
+            display_mask = True
+            mask_size = (200, 200)
+            if 'z' in mask_choice:
+              z_mask_10x10 = process_webcam_image(frame, 1/64, 1/48, False)
+              z_mask = np.reshape(z_mask_10x10, (100))
+              if display_mask:
+                resized_z_mask = cv2.resize(z_mask_10x10, mask_size, interpolation=cv2.INTER_AREA)
+                cv2.imshow('z_mask', resized_z_mask)
+            if '0' in mask_choice:
+              h0_mask = process_webcam_image(frame, 1/160, 1/120, threshold=.3)
+              if display_mask:
+                resized_h0_mask = cv2.resize(h0_mask, mask_size, interpolation=cv2.INTER_AREA)
+                cv2.imshow('h0_mask', resized_h0_mask)
+            if '1' in mask_choice:
+              h1_mask = process_webcam_image(frame, 1/80, 1/60, threshold=.3)
+              if display_mask:
+                resized_h1_mask = cv2.resize(h1_mask, mask_size, interpolation=cv2.INTER_AREA)
+                cv2.imshow('h1_mask', resized_h1_mask)
+            if '2' in mask_choice:
+              h2_mask = process_webcam_image(frame, 1/40, 1/30, threshold=.3)
+              if display_mask:
+                resized_h2_mask = cv2.resize(h2_mask, mask_size, interpolation=cv2.INTER_AREA)
+                cv2.imshow('h2_mask', resized_h2_mask)
+            if '3' in mask_choice:
+              h3_mask = process_webcam_image(frame, 1/20, 1/15, threshold=.3)
+              if display_mask:
+                resized_h3_mask = cv2.resize(h3_mask, mask_size, interpolation=cv2.INTER_AREA)
+                cv2.imshow('h3_mask', resized_h3_mask)
+
+            #h1_mask = process_webcam_image(frame, 1/80, 1/60)
             
             feed_dict = {
                 dcgan.z: z_sample, 
@@ -99,17 +151,23 @@ while is_capturing:
                 dcgan.h3_mask: h3_mask,
                 dcgan.h4_mask: h4_mask,
             }
-            print(int(round(time.time() * 1000)))
             samples = sess.run(dcgan.sampler, feed_dict=feed_dict)
-            print(int(round(time.time() * 1000))) # about 60ms on gpu to run 
-            #utils.save_images(samples, [8,8], './samples/test_%s.png' % strftime("%Y%m%d%H%M%S", gmtime()))
-            #for image in samples[:3]:
-            #    cv2.imshow('img', deprocess_image(image))
-            #resized = cv2.resize(flipped, (800, 800), interpolation=cv2.INTER_CUBIC)
-            #cv2.imshow('img', resized)
             img = cv2.cvtColor(deprocess_image(samples[0]), cv2.COLOR_RGB2BGR)
             resized = cv2.resize(img, (800, 800), interpolation=cv2.INTER_CUBIC)
             cv2.imshow('img', resized)
+            feed_dict_empty = {
+                dcgan.z: z_sample, 
+                dcgan.z_mask: z_mask_empty,
+                dcgan.h0_mask: h0_mask_empty,
+                dcgan.h1_mask: h1_mask_empty,
+                dcgan.h2_mask: h2_mask_empty,
+                dcgan.h3_mask: h3_mask_empty,
+                dcgan.h4_mask: h4_mask_empty,
+            }
+            samples_empty = sess.run(dcgan.sampler, feed_dict=feed_dict_empty)
+            img_empty = cv2.cvtColor(deprocess_image(samples_empty[0]), cv2.COLOR_RGB2BGR)
+            resized_empty = cv2.resize(img_empty, (800, 800), interpolation=cv2.INTER_CUBIC)
+            cv2.imshow('img_empty', resized_empty)
             
             if cv2.waitKey(1) & 0xFF == ord('q'):
               print('q pressed...')
@@ -122,7 +180,8 @@ while is_capturing:
             #plt.draw()
             #break
             
-    except:
+    except(e):
+        print(e)
         print('Exception!')
         vc.release()
 
