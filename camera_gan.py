@@ -65,6 +65,21 @@ def process_webcam_image(img, x_scale, y_scale, flip=True, threshold=0.5):
   flipped[flipped<=threshold] = 0
   return flipped
 
+def bucket(frame, axis, num_buckets, invert): # for grayscale
+  if invert:
+    frame = 1-frame
+  length = frame.shape[axis]
+  bucket_length = length/num_buckets
+  buckets = np.zeros(num_buckets)
+  for i in range(num_buckets):
+    if axis == 0:
+      buckets[i] = np.sum(frame[int(i*bucket_length):int((i+1)*bucket_length),:])
+    elif axis == 1:
+      buckets[i] = np.sum(frame[:,int(i*bucket_length):int((i+1)*bucket_length)])
+  print(frame)
+  print(buckets)
+  return np.argmax(buckets)
+
 z_sample = np.random.uniform(-0.5, 0.5, size=(config.batch_size, dcgan.z_dim))
 
 z_mask_empty = np.ones([dcgan.z_dim])
@@ -73,13 +88,6 @@ h1_mask_empty = np.ones([int(dcgan.output_height/8), int(dcgan.output_width/8)])
 h2_mask_empty = np.ones([int(dcgan.output_height/4), int(dcgan.output_width/4)]) # 16, 16
 h3_mask_empty = np.ones([int(dcgan.output_height/2), int(dcgan.output_width/2)]) # 32, 32
 h4_mask_empty = np.ones([int(dcgan.output_height), int(dcgan.output_width)]) # 64, 64
-
-z_mask = z_mask_empty
-h0_mask = h0_mask_empty
-h1_mask = h1_mask_empty
-h2_mask = h2_mask_empty
-h3_mask = h3_mask_empty
-h4_mask = h4_mask_empty
 
 # vc.release()
 vc = cv2.VideoCapture(1)
@@ -109,10 +117,20 @@ while is_capturing:
             if(time.time() > time_to_switch):
               time_to_switch += seconds_per_random_sample
               z_sample = np.random.uniform(-0.5, 0.5, size=(config.batch_size, dcgan.z_dim))
+            z_mask = z_mask_empty
+            h0_mask = h0_mask_empty
+            h1_mask = h1_mask_empty
+            h2_mask = h2_mask_empty
+            h3_mask = h3_mask_empty
+            h4_mask = h4_mask_empty
 
-            mask_choice = 'z012'
+
+            bucket_choice = bucket(process_webcam_image(frame, 1/20, 1/15, threshold=.3), 1, 4, True)
+            mask_choice = 'z' + str(bucket_choice)
+            #mask_choice = 'z012'
             display_mask = True
             mask_size = (200, 200)
+            face_size = (600, 600)
             if 'z' in mask_choice:
               z_mask_10x10 = process_webcam_image(frame, 1/64, 1/48, False)
               z_mask = np.reshape(z_mask_10x10, (100))
@@ -153,7 +171,7 @@ while is_capturing:
             }
             samples = sess.run(dcgan.sampler, feed_dict=feed_dict)
             img = cv2.cvtColor(deprocess_image(samples[0]), cv2.COLOR_RGB2BGR)
-            resized = cv2.resize(img, (800, 800), interpolation=cv2.INTER_CUBIC)
+            resized = cv2.resize(img, face_size, interpolation=cv2.INTER_CUBIC)
             cv2.imshow('img', resized)
             feed_dict_empty = {
                 dcgan.z: z_sample, 
@@ -166,7 +184,7 @@ while is_capturing:
             }
             samples_empty = sess.run(dcgan.sampler, feed_dict=feed_dict_empty)
             img_empty = cv2.cvtColor(deprocess_image(samples_empty[0]), cv2.COLOR_RGB2BGR)
-            resized_empty = cv2.resize(img_empty, (800, 800), interpolation=cv2.INTER_CUBIC)
+            resized_empty = cv2.resize(img_empty, face_size, interpolation=cv2.INTER_CUBIC)
             cv2.imshow('img_empty', resized_empty)
             
             if cv2.waitKey(1) & 0xFF == ord('q'):
