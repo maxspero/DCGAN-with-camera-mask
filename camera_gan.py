@@ -102,6 +102,11 @@ else:
 
 print(is_capturing)
 time_to_switch = time.time() + seconds_per_random_sample
+
+prev_output_window = np.zeros((3, 64, 64, 3))
+window_iter = 0
+reset_window = True
+
 while is_capturing:
     try:    # Lookout for a keyboardInterrupt to stop the script
         is_capturing, frame = vc.read()
@@ -117,6 +122,7 @@ while is_capturing:
             if(time.time() > time_to_switch):
               time_to_switch += seconds_per_random_sample
               z_sample = np.random.uniform(-0.5, 0.5, size=(config.batch_size, dcgan.z_dim))
+              reset_window = True
             z_mask = z_mask_empty
             h0_mask = h0_mask_empty
             h1_mask = h1_mask_empty
@@ -125,7 +131,9 @@ while is_capturing:
             h4_mask = h4_mask_empty
 
 
-            bucket_choice = bucket(process_webcam_image(frame, 1/20, 1/15, threshold=.3), 1, 4, True)
+            #bucket_choice = bucket(process_webcam_image(frame, 1/20, 1/15, threshold=.3), 1, 4, True)
+            bucket_choice = max(bucket(process_webcam_image(frame, 1/20, 1/15, threshold=.3), 1, 5, True) - 1, 0)
+            
             mask_choice = 'z' + str(bucket_choice)
             #mask_choice = 'z012'
             display_mask = True
@@ -170,7 +178,15 @@ while is_capturing:
                 dcgan.h4_mask: h4_mask,
             }
             samples = sess.run(dcgan.sampler, feed_dict=feed_dict)
-            img = cv2.cvtColor(deprocess_image(samples[0]), cv2.COLOR_RGB2BGR)
+            prev_output_window[window_iter%3] = samples[0]
+            if reset_window:
+              prev_output_window[:] += samples[0]
+              reset_window = False
+              window_iter = 0
+            window_iter += 1
+            #avg = np.sum(samples, axis=0)/5
+            avg = (prev_output_window[0] + prev_output_window[1] + prev_output_window[2])/3
+            img = cv2.cvtColor(deprocess_image(avg), cv2.COLOR_RGB2BGR)
             resized = cv2.resize(img, face_size, interpolation=cv2.INTER_CUBIC)
             cv2.imshow('img', resized)
             feed_dict_empty = {
@@ -199,8 +215,8 @@ while is_capturing:
             #break
             
     except(e):
-        print(e)
-        print('Exception!')
         vc.release()
+        print('Exception!')
+        print(e)
 
 
