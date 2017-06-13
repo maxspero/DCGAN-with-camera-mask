@@ -132,7 +132,7 @@ while is_capturing:
             h2_mask = h2_mask_empty
             h3_mask = h3_mask_empty
             h4_mask = h4_mask_empty
-            mask_value = .15
+            mask_value = .05
 
 
             #bucket_choice = bucket(process_webcam_image(frame, 1/20, 1/15, threshold=.3), 1, 4, True)
@@ -140,9 +140,9 @@ while is_capturing:
             
             mask_choice = 'z' + str(bucket_choice)
             #mask_choice = 'z012'
-            display_mask = True
+            display_mask = False
             mask_size = (200, 200)
-            face_size = (600, 600)
+            face_size = (500, 500)
             if 'z' in mask_choice:
               z_mask_10x10 = process_webcam_image(frame, 1/64, 1/48, 2.5, flip=False)
               z_mask = np.reshape(z_mask_10x10, (100))
@@ -191,8 +191,12 @@ while is_capturing:
             #avg = np.sum(samples, axis=0)/5
             avg = (prev_output_window[0] + prev_output_window[1] + prev_output_window[2])/3
             img = cv2.cvtColor(deprocess_image(avg), cv2.COLOR_RGB2BGR)
+            cv2.namedWindow("img", cv2.WND_PROP_FULLSCREEN)   
+            cv2.setWindowProperty("img", cv2.WND_PROP_FULLSCREEN, True)
             resized = cv2.resize(img, face_size, interpolation=cv2.INTER_CUBIC)
-            cv2.imshow('img', resized)
+            black = np.zeros((720, 1280, 3)).astype(float)
+            black[100:100+face_size[1],40:40+face_size[0]] = resized/255.0
+            # cv2.imshow('img', resized)
             feed_dict_empty = {
                 dcgan.z: z_sample, 
                 dcgan.z_mask: z_mask_empty,
@@ -205,8 +209,9 @@ while is_capturing:
             samples_empty = sess.run(dcgan.sampler, feed_dict=feed_dict_empty)
             img_empty = cv2.cvtColor(deprocess_image(samples_empty[0]), cv2.COLOR_RGB2BGR)
             resized_empty = cv2.resize(img_empty, face_size, interpolation=cv2.INTER_CUBIC)
-            cv2.imshow('img_empty', resized_empty)
+            black[100:100+face_size[1],750:750+face_size[0]] = resized_empty/255.0
             
+            cv2.imshow('img',black)
             if cv2.waitKey(1) & 0xFF == ord('q'):
               print('q pressed...')
               vc.release()
